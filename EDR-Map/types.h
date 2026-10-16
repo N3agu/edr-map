@@ -6,6 +6,10 @@
 struct HookFinding {
     std::string moduleName;
     std::string functionName;
+    std::string diskBytesHex;
+    std::string memoryBytesHex;
+    ULONG_PTR targetAddress = 0;
+    std::string targetModule;
 };
 
 struct MinifilterFinding {

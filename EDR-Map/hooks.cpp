@@ -2,6 +2,8 @@
 #include "types.h"
 #include "output.h"
 #include <algorithm>
+#include <sstream>
+#include <iomanip>
 
 static std::string GetSystemModulePath(const std::string& moduleName) {
     char systemDir[MAX_PATH];
@@ -9,6 +11,130 @@ static std::string GetSystemModulePath(const std::string& moduleName) {
         return "C:\\Windows\\System32\\" + moduleName;
     }
     return std::string(systemDir) + "\\" + moduleName;
+}
+
+static std::string BytesToHexString(const BYTE* bytes, size_t length) {
+    std::ostringstream ss;
+    ss << std::hex << std::uppercase << std::setfill('0');
+    for (size_t i = 0; i < length; ++i) {
+        ss << std::setw(2) << static_cast<int>(bytes[i]);
+        if (i + 1 < length) ss << " ";
+    }
+    return ss.str();
+}
+
+static ULONG_PTR ResolveJumpTarget(const BYTE* code, ULONG_PTR functionAddress) {
+    // 1. E9 <rel32>: JMP rel32
+    if (code[0] == 0xE9) {
+        INT32 relOffset = *reinterpret_cast<const INT32*>(code + 1);
+        return functionAddress + 5 + static_cast<INT_PTR>(relOffset);
+    }
+
+    // 2. EB <rel8>: JMP rel8 (Sometimes leads to a secondary E9 or FF 25 right before/after)
+    if (code[0] == 0xEB) {
+        INT8 relOffset = *reinterpret_cast<const INT8*>(code + 1);
+        ULONG_PTR shortTarget = functionAddress + 2 + static_cast<INT_PTR>(relOffset);
+        return shortTarget;
+    }
+
+    // 3. FF 25 <rel32>: JMP QWORD PTR [RIP + rel32] (x64) or [abs32] (x86)
+    if (code[0] == 0xFF && code[1] == 0x25) {
+        INT32 relOffset = *reinterpret_cast<const INT32*>(code + 2);
+#ifdef _WIN64
+        ULONG_PTR pointerAddress = functionAddress + 6 + static_cast<INT_PTR>(relOffset);
+#else
+        ULONG_PTR pointerAddress = static_cast<ULONG_PTR>(relOffset);
+#endif
+        MEMORY_BASIC_INFORMATION mbi;
+        if (VirtualQuery(reinterpret_cast<LPCVOID>(pointerAddress), &mbi, sizeof(mbi)) &&
+            mbi.State == MEM_COMMIT && !(mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD))) {
+            return *reinterpret_cast<const ULONG_PTR*>(pointerAddress);
+        }
+    }
+
+#ifdef _WIN64
+    // 4. 48 B8 <imm64> FF E0: MOV RAX, imm64; JMP RAX
+    if (code[0] == 0x48 && code[1] == 0xB8 && code[10] == 0xFF && code[11] == 0xE0) {
+        return *reinterpret_cast<const ULONG_PTR*>(code + 2);
+    }
+
+    // 5. 49 BA <imm64> 41 FF E2: MOV R10, imm64; JMP R10
+    if (code[0] == 0x49 && code[1] == 0xBA && code[10] == 0x41 && code[11] == 0xFF && code[12] == 0xE2) {
+        return *reinterpret_cast<const ULONG_PTR*>(code + 2);
+    }
+#endif
+
+    // 6. Check if hook starts after `MOV R10, RCX` (4C 8B D1) - very common in syscall stubs
+    if (code[0] == 0x4C && code[1] == 0x8B && code[2] == 0xD1) {
+        if (code[3] == 0xE9) {
+            INT32 relOffset = *reinterpret_cast<const INT32*>(code + 4);
+            return (functionAddress + 3) + 5 + static_cast<INT_PTR>(relOffset);
+        }
+        if (code[3] == 0xFF && code[4] == 0x25) {
+            INT32 relOffset = *reinterpret_cast<const INT32*>(code + 5);
+#ifdef _WIN64
+            ULONG_PTR pointerAddress = (functionAddress + 3) + 6 + static_cast<INT_PTR>(relOffset);
+#else
+            ULONG_PTR pointerAddress = static_cast<ULONG_PTR>(relOffset);
+#endif
+            MEMORY_BASIC_INFORMATION mbi;
+            if (VirtualQuery(reinterpret_cast<LPCVOID>(pointerAddress), &mbi, sizeof(mbi)) &&
+                mbi.State == MEM_COMMIT && !(mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD))) {
+                return *reinterpret_cast<const ULONG_PTR*>(pointerAddress);
+            }
+        }
+    }
+
+    return 0;
+}
+
+static std::string ResolveAddressOwner(ULONG_PTR targetAddress) {
+    if (targetAddress == 0) {
+        return "Unresolved (Unrecognized trampoline pattern)";
+    }
+
+    HMODULE hMod = NULL;
+    if (GetModuleHandleExA(
+        GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+        reinterpret_cast<LPCSTR>(targetAddress),
+        &hMod) && hMod != NULL) {
+
+        char modPath[MAX_PATH] = { 0 };
+        if (GetModuleFileNameA(hMod, modPath, MAX_PATH)) {
+            ULONG_PTR offset = targetAddress - reinterpret_cast<ULONG_PTR>(hMod);
+            std::ostringstream ss;
+            ss << modPath << " + 0x" << std::hex << offset;
+            return ss.str();
+        }
+    }
+
+    // If not directly inside a registered PE module, check if it jumps to an intermediate trampoline page
+    MEMORY_BASIC_INFORMATION mbi;
+    if (VirtualQuery(reinterpret_cast<LPCVOID>(targetAddress), &mbi, sizeof(mbi)) && mbi.State == MEM_COMMIT) {
+        const BYTE* trampCode = reinterpret_cast<const BYTE*>(targetAddress);
+        ULONG_PTR secondHop = ResolveJumpTarget(trampCode, targetAddress);
+        if (secondHop != 0 && secondHop != targetAddress) {
+            HMODULE hMod2 = NULL;
+            if (GetModuleHandleExA(
+                GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                reinterpret_cast<LPCSTR>(secondHop),
+                &hMod2) && hMod2 != NULL) {
+                char modPath[MAX_PATH] = { 0 };
+                if (GetModuleFileNameA(hMod2, modPath, MAX_PATH)) {
+                    ULONG_PTR offset = secondHop - reinterpret_cast<ULONG_PTR>(hMod2);
+                    std::ostringstream ss;
+                    ss << modPath << " + 0x" << std::hex << offset << " (via trampoline page)";
+                    return ss.str();
+                }
+            }
+        }
+
+        std::ostringstream ss;
+        ss << "Unbacked Memory Region (Base: 0x" << std::hex << reinterpret_cast<ULONG_PTR>(mbi.BaseAddress) << ")";
+        return ss.str();
+    }
+
+    return "Unknown Memory Region";
 }
 
 static PVOID ReadFileInMemory(const std::string& filePath) {
@@ -148,13 +274,37 @@ void ScanModule(const std::string& moduleName) {
                 continue;
             }
 
-            PVOID diskFunctionAddress = (PVOID)((ULONG_PTR)diskBuffer + RvaToRawOffset(ntHeaders, functionRva));
-            PVOID memoryFunctionAddress = (PVOID)((ULONG_PTR)memoryBase + functionRva);
+            DWORD rawOffset = RvaToRawOffset(ntHeaders, functionRva);
+            if (!rawOffset) continue;
 
-            if (memcmp(diskFunctionAddress, memoryFunctionAddress, 16) != 0) {
-                g_results.hookedFunctions.push_back({ moduleName, functionName });
+            const BYTE* diskFunctionBytes = (const BYTE*)((ULONG_PTR)diskBuffer + rawOffset);
+            const BYTE* memoryFunctionBytes = (const BYTE*)((ULONG_PTR)memoryBase + functionRva);
+
+            if (memcmp(diskFunctionBytes, memoryFunctionBytes, 16) != 0) {
+                std::string diskHex = BytesToHexString(diskFunctionBytes, 16);
+                std::string memHex = BytesToHexString(memoryFunctionBytes, 16);
+                ULONG_PTR targetAddr = ResolveJumpTarget(memoryFunctionBytes, (ULONG_PTR)memoryFunctionBytes);
+                std::string ownerModule = ResolveAddressOwner(targetAddr);
+
+                g_results.hookedFunctions.push_back({
+                    moduleName,
+                    functionName,
+                    diskHex,
+                    memHex,
+                    targetAddr,
+                    ownerModule
+                    });
+
                 if (!g_config.outputJson && !g_config.outputCsv) {
-                    GetOutStream() << "[*] HOOKED [" << moduleName << "]: " << functionName << "\n";
+                    GetOutStream() << "[*] HOOKED [" << moduleName << "]: " << functionName << "\n"
+                        << "    Disk   : " << diskHex << "\n"
+                        << "    Memory : " << memHex << "\n";
+                    if (targetAddr != 0) {
+                        GetOutStream() << "    Target : 0x" << std::hex << targetAddr << std::dec << " (" << ownerModule << ")\n";
+                    }
+                    else {
+                        GetOutStream() << "    Target : " << ownerModule << "\n";
+                    }
                 }
             }
         }

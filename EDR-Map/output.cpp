@@ -87,9 +87,17 @@ void PrintJsonOutput() {
     if (g_results.hookScanExecuted) {
         out << "  \"hooks\": [\n";
         for (size_t i = 0; i < g_results.hookedFunctions.size(); ++i) {
+            const auto& h = g_results.hookedFunctions[i];
+            std::ostringstream addrStr;
+            addrStr << "0x" << std::hex << h.targetAddress;
+
             out << "    {\n"
-                << "      \"module\": \"" << EscapeJsonString(g_results.hookedFunctions[i].moduleName) << "\",\n"
-                << "      \"function\": \"" << EscapeJsonString(g_results.hookedFunctions[i].functionName) << "\"\n"
+                << "      \"module\": \"" << EscapeJsonString(h.moduleName) << "\",\n"
+                << "      \"function\": \"" << EscapeJsonString(h.functionName) << "\",\n"
+                << "      \"disk_bytes\": \"" << EscapeJsonString(h.diskBytesHex) << "\",\n"
+                << "      \"memory_bytes\": \"" << EscapeJsonString(h.memoryBytesHex) << "\",\n"
+                << "      \"target_address\": \"" << addrStr.str() << "\",\n"
+                << "      \"target_module\": \"" << EscapeJsonString(h.targetModule) << "\"\n"
                 << "    }";
             if (i + 1 < g_results.hookedFunctions.size()) out << ",";
             out << "\n";
@@ -134,20 +142,22 @@ void PrintJsonOutput() {
 
 void PrintCsvOutput() {
     std::ostream& out = GetOutStream();
-    out << "type,module,name,altitude,category\n";
+    out << "type,module,name,disk_bytes,memory_bytes,target_module,altitude,category\n";
     if (g_results.hookScanExecuted) {
         for (const auto& item : g_results.hookedFunctions) {
-            out << "hook,\"" << item.moduleName << "\",\"" << item.functionName << "\",\"\",\n";
+            out << "hook,\"" << item.moduleName << "\",\"" << item.functionName << "\",\""
+                << item.diskBytesHex << "\",\"" << item.memoryBytesHex << "\",\""
+                << item.targetModule << "\",\"\",\"\"\n";
         }
     }
     if (g_results.etwScanExecuted) {
         for (const auto& session : g_results.flaggedEtwSessions) {
-            out << "etw,\"\",\"" << WStringToString(session) << "\",\"\",\n";
+            out << "etw,\"\",\"" << WStringToString(session) << "\",\"\",\"\",\"\",\"\",\"\"\n";
         }
     }
     if (g_results.minifilterScanExecuted) {
         for (const auto& flt : g_results.minifilters) {
-            out << "minifilter,\"\",\"" << WStringToString(flt.name) << "\",\""
+            out << "minifilter,\"\",\"" << WStringToString(flt.name) << "\",\"\",\"\",\"\",\""
                 << WStringToString(flt.altitude) << "\",\"" << flt.category << "\"\n";
         }
     }
