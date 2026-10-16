@@ -2,6 +2,7 @@
 #include "output.h"
 #include "hooks.h"
 #include "etw.h"
+#include "minifilters.h"
 #include <iostream>
 #include <sstream>
 
@@ -32,8 +33,14 @@ int main(int argc, char* argv[]) {
         }
         else if (strcmp(argv[i], "--etwonly") == 0) {
             g_config.runHooks = false;
+            g_config.runMinifilters = false;
         }
         else if (strcmp(argv[i], "--hooksonly") == 0) {
+            g_config.runEtw = false;
+            g_config.runMinifilters = false;
+        }
+        else if (strcmp(argv[i], "--minifiltersonly") == 0) {
+            g_config.runHooks = false;
             g_config.runEtw = false;
         }
         else if (strcmp(argv[i], "--all-modules") == 0) {
@@ -77,9 +84,10 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    if (!g_config.runHooks && !g_config.runEtw) {
+    int activeEngines = (g_config.runHooks ? 1 : 0) + (g_config.runEtw ? 1 : 0) + (g_config.runMinifilters ? 1 : 0);
+    if (activeEngines == 0) {
         PrintBanner();
-        std::cout << "\n\n[-] Error: You cannot use --etwonly and --hooksonly at the same time.\n";
+        std::cout << "\n\n[-] Error: Invalid module flags selected.\n";
         return -1;
     }
 
@@ -103,6 +111,10 @@ int main(int argc, char* argv[]) {
 
     if (g_config.runEtw) {
         EnumerateETWSessions();
+    }
+
+    if (g_config.runMinifilters) {
+        EnumerateMinifilters();
     }
 
     if (g_config.outputJson) {

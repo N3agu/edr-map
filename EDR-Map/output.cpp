@@ -61,28 +61,29 @@ void PrintBanner() {
 }
 
 void PrintHelp() {
-    GetOutStream() << "\n\nA lightweight scanner that detects AV/EDR userland hooks and lists active ETW telemetry sessions.\n\n"
+    GetOutStream() << "\n\nA lightweight scanner that detects AV/EDR userland hooks, active ETW sessions, and minifilter drivers.\n\n"
         << "Usage: EDR_Map.exe [OPTIONS]\n\n"
         << "Options:\n"
         << "  -h, --help                 Show this help message and exit.\n"
-        << "  -s, --silent               Disable verbose output (shows debug info).\n"
-        << "  --etwonly                  Skip userland hook scanning; ONLY enumerate ETW trace sessions.\n"
-        << "  --hooksonly                Skip ETW enumeration; ONLY scan for userland API hooks.\n"
-        << "  --modules <m1,m2,...>      Comma-separated list of DLLs to scan (e.g. ntdll.dll,kernel32.dll).\n"
+        << "  -s, --silent               Disable verbose output (alerts only).\n"
+        << "  --etwonly                  Run ONLY ETW session enumeration.\n"
+        << "  --hooksonly                Run ONLY userland API hook scanning.\n"
+        << "  --minifiltersonly          Run ONLY filesystem minifilter driver enumeration.\n"
+        << "  --modules <m1,m2,...>      Comma-separated list of DLLs to scan.\n"
         << "  --all-modules              Scan high-value targets (ntdll, kernel32, kernelbase, ws2_32, amsi).\n"
         << "  --json                     Output results in JSON format.\n"
         << "  --csv                      Output results in CSV format.\n"
         << "  -o, --output <file>        Write output directly to specified file.\n\n"
         << "Examples:\n"
-        << "  EDR_Map.exe                                      # Standard run (ntdll.dll only)\n"
-        << "  EDR_Map.exe --all-modules                        # Scan all default high-value DLLs\n"
-        << "  EDR_Map.exe --modules amsi.dll,ws2_32.dll        # Scan specific modules\n"
-        << "  EDR_Map.exe --all-modules --json -o scan.json    # Full scan exported to JSON\n";
+        << "  EDR_Map.exe                                      # Full audit with all modules\n"
+        << "  EDR_Map.exe --minifiltersonly                    # Only check filter drivers and altitudes\n"
+        << "  EDR_Map.exe --all-modules --json -o report.json  # Full scan exported to JSON\n";
 }
 
 void PrintJsonOutput() {
     std::ostream& out = GetOutStream();
     out << "{\n";
+
     if (g_results.hookScanExecuted) {
         out << "  \"hooks\": [\n";
         for (size_t i = 0; i < g_results.hookedFunctions.size(); ++i) {
@@ -94,7 +95,7 @@ void PrintJsonOutput() {
             out << "\n";
         }
         out << "  ]";
-        if (g_results.etwScanExecuted) out << ",";
+        if (g_results.etwScanExecuted || g_results.minifilterScanExecuted) out << ",";
         out << "\n";
     }
 
@@ -106,22 +107,48 @@ void PrintJsonOutput() {
             if (i + 1 < g_results.flaggedEtwSessions.size()) out << ",";
             out << "\n";
         }
+        out << "  ]";
+        if (g_results.minifilterScanExecuted) out << ",";
+        out << "\n";
+    }
+
+    if (g_results.minifilterScanExecuted) {
+        out << "  \"minifilters\": [\n";
+        for (size_t i = 0; i < g_results.minifilters.size(); ++i) {
+            const auto& flt = g_results.minifilters[i];
+            out << "    {\n"
+                << "      \"name\": \"" << EscapeJsonString(WStringToString(flt.name)) << "\",\n"
+                << "      \"altitude\": \"" << EscapeJsonString(WStringToString(flt.altitude)) << "\",\n"
+                << "      \"category\": \"" << EscapeJsonString(flt.category) << "\",\n"
+                << "      \"instances\": " << flt.numInstances << ",\n"
+                << "      \"flagged\": " << (flt.isSecurityTelemetry ? "true" : "false") << "\n"
+                << "    }";
+            if (i + 1 < g_results.minifilters.size()) out << ",";
+            out << "\n";
+        }
         out << "  ]\n";
     }
+
     out << "}\n";
 }
 
 void PrintCsvOutput() {
     std::ostream& out = GetOutStream();
-    out << "type,module,name\n";
+    out << "type,module,name,altitude,category\n";
     if (g_results.hookScanExecuted) {
         for (const auto& item : g_results.hookedFunctions) {
-            out << "hook,\"" << item.moduleName << "\",\"" << item.functionName << "\"\n";
+            out << "hook,\"" << item.moduleName << "\",\"" << item.functionName << "\",\"\",\n";
         }
     }
     if (g_results.etwScanExecuted) {
         for (const auto& session : g_results.flaggedEtwSessions) {
-            out << "etw,\"\",\"" << WStringToString(session) << "\"\n";
+            out << "etw,\"\",\"" << WStringToString(session) << "\",\"\",\n";
+        }
+    }
+    if (g_results.minifilterScanExecuted) {
+        for (const auto& flt : g_results.minifilters) {
+            out << "minifilter,\"\",\"" << WStringToString(flt.name) << "\",\""
+                << WStringToString(flt.altitude) << "\",\"" << flt.category << "\"\n";
         }
     }
 }

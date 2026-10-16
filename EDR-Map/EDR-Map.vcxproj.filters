@@ -27,6 +27,9 @@
     <ClCompile Include="etw.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="minifilters.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="types.h">
@@ -39,6 +42,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="etw.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="minifilters.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

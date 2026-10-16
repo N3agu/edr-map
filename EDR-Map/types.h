@@ -8,10 +8,20 @@ struct HookFinding {
     std::string functionName;
 };
 
+struct MinifilterFinding {
+    std::wstring name;
+    std::wstring altitude;
+    ULONG frameId;
+    ULONG numInstances;
+    std::string category;
+    bool isSecurityTelemetry;
+};
+
 struct Config {
     bool runSilent = false;
     bool runHooks = true;
     bool runEtw = true;
+    bool runMinifilters = true;
     bool outputJson = false;
     bool outputCsv = false;
     std::string outputFile = "";
@@ -21,8 +31,10 @@ struct Config {
 struct ScanResults {
     std::vector<HookFinding> hookedFunctions;
     std::vector<std::wstring> flaggedEtwSessions;
+    std::vector<MinifilterFinding> minifilters;
     bool hookScanExecuted = false;
     bool etwScanExecuted = false;
+    bool minifilterScanExecuted = false;
 };
 
 extern Config g_config;
