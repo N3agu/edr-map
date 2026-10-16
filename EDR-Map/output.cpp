@@ -64,22 +64,20 @@ void PrintHelp() {
     GetOutStream() << "\n\nA lightweight scanner that detects AV/EDR userland hooks and lists active ETW telemetry sessions.\n\n"
         << "Usage: EDR_Map.exe [OPTIONS]\n\n"
         << "Options:\n"
-        << "  -h, --help               Show this help message and exit.\n"
-        << "  -s, --silent             Disable verbose output (shows debug info).\n"
-        << "  --etwonly                Skip userland hook scanning; ONLY enumerate ETW trace sessions.\n"
-        << "  --hooksonly              Skip ETW enumeration; ONLY scan for userland API hooks.\n"
-        << "  --json                   Output results in JSON format.\n"
-        << "  --csv                    Output results in CSV format.\n"
-        << "  -o, --output <file>      Write output directly to specified file.\n\n"
+        << "  -h, --help                 Show this help message and exit.\n"
+        << "  -s, --silent               Disable verbose output (shows debug info).\n"
+        << "  --etwonly                  Skip userland hook scanning; ONLY enumerate ETW trace sessions.\n"
+        << "  --hooksonly                Skip ETW enumeration; ONLY scan for userland API hooks.\n"
+        << "  --modules <m1,m2,...>      Comma-separated list of DLLs to scan (e.g. ntdll.dll,kernel32.dll).\n"
+        << "  --all-modules              Scan high-value targets (ntdll, kernel32, kernelbase, ws2_32, amsi).\n"
+        << "  --json                     Output results in JSON format.\n"
+        << "  --csv                      Output results in CSV format.\n"
+        << "  -o, --output <file>        Write output directly to specified file.\n\n"
         << "Examples:\n"
-        << "  EDR_Map.exe                      # Run both modules with full debug output\n"
-        << "  EDR_Map.exe -s                   # Run both modules silently (alerts only)\n"
-        << "  EDR_Map.exe --etwonly            # Run only ETW\n"
-        << "  EDR_Map.exe --hooksonly -s       # Run silently only Hooks\n"
-        << "  EDR_Map.exe --json               # Output structured JSON\n"
-        << "  EDR_Map.exe --csv                # Output structured CSV\n"
-        << "  EDR_Map.exe -o results.txt       # Save output to file\n"
-        << "  EDR_Map.exe --json -o scan.json  # Save JSON directly to file\n";
+        << "  EDR_Map.exe                                      # Standard run (ntdll.dll only)\n"
+        << "  EDR_Map.exe --all-modules                        # Scan all default high-value DLLs\n"
+        << "  EDR_Map.exe --modules amsi.dll,ws2_32.dll        # Scan specific modules\n"
+        << "  EDR_Map.exe --all-modules --json -o scan.json    # Full scan exported to JSON\n";
 }
 
 void PrintJsonOutput() {
@@ -88,7 +86,10 @@ void PrintJsonOutput() {
     if (g_results.hookScanExecuted) {
         out << "  \"hooks\": [\n";
         for (size_t i = 0; i < g_results.hookedFunctions.size(); ++i) {
-            out << "    \"" << EscapeJsonString(g_results.hookedFunctions[i]) << "\"";
+            out << "    {\n"
+                << "      \"module\": \"" << EscapeJsonString(g_results.hookedFunctions[i].moduleName) << "\",\n"
+                << "      \"function\": \"" << EscapeJsonString(g_results.hookedFunctions[i].functionName) << "\"\n"
+                << "    }";
             if (i + 1 < g_results.hookedFunctions.size()) out << ",";
             out << "\n";
         }
@@ -112,15 +113,15 @@ void PrintJsonOutput() {
 
 void PrintCsvOutput() {
     std::ostream& out = GetOutStream();
-    out << "type,name\n";
+    out << "type,module,name\n";
     if (g_results.hookScanExecuted) {
-        for (const auto& func : g_results.hookedFunctions) {
-            out << "hook,\"" << func << "\"\n";
+        for (const auto& item : g_results.hookedFunctions) {
+            out << "hook,\"" << item.moduleName << "\",\"" << item.functionName << "\"\n";
         }
     }
     if (g_results.etwScanExecuted) {
         for (const auto& session : g_results.flaggedEtwSessions) {
-            out << "etw,\"" << WStringToString(session) << "\"\n";
+            out << "etw,\"\",\"" << WStringToString(session) << "\"\n";
         }
     }
 }

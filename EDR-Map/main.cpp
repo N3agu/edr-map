@@ -3,9 +3,22 @@
 #include "hooks.h"
 #include "etw.h"
 #include <iostream>
+#include <sstream>
 
 Config g_config;
 ScanResults g_results;
+
+static std::vector<std::string> ParseModuleList(const std::string& input) {
+    std::vector<std::string> modules;
+    std::stringstream ss(input);
+    std::string token;
+    while (std::getline(ss, token, ',')) {
+        if (!token.empty()) {
+            modules.push_back(token);
+        }
+    }
+    return modules;
+}
 
 int main(int argc, char* argv[]) {
     for (int i = 1; i < argc; ++i) {
@@ -22,6 +35,24 @@ int main(int argc, char* argv[]) {
         }
         else if (strcmp(argv[i], "--hooksonly") == 0) {
             g_config.runEtw = false;
+        }
+        else if (strcmp(argv[i], "--all-modules") == 0) {
+            g_config.targetModules = {
+                "ntdll.dll",
+                "kernel32.dll",
+                "kernelbase.dll",
+                "ws2_32.dll",
+                "amsi.dll"
+            };
+        }
+        else if (strcmp(argv[i], "--modules") == 0) {
+            if (i + 1 < argc) {
+                g_config.targetModules = ParseModuleList(argv[++i]);
+            }
+            else {
+                std::cout << "[-] Error: --modules requires a comma-separated list of DLLs.\n";
+                return -1;
+            }
         }
         else if (strcmp(argv[i], "--json") == 0) {
             g_config.outputJson = true;

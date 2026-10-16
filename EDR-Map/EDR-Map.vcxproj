@@ -124,7 +124,16 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="etw.cpp" />
+    <ClCompile Include="hooks.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="output.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="etw.h" />
+    <ClInclude Include="hooks.h" />
+    <ClInclude Include="output.h" />
+    <ClInclude Include="types.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

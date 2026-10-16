@@ -3,6 +3,11 @@
 #include <string>
 #include <vector>
 
+struct HookFinding {
+    std::string moduleName;
+    std::string functionName;
+};
+
 struct Config {
     bool runSilent = false;
     bool runHooks = true;
@@ -10,10 +15,11 @@ struct Config {
     bool outputJson = false;
     bool outputCsv = false;
     std::string outputFile = "";
+    std::vector<std::string> targetModules = { "ntdll.dll" };
 };
 
 struct ScanResults {
-    std::vector<std::string> hookedFunctions;
+    std::vector<HookFinding> hookedFunctions;
     std::vector<std::wstring> flaggedEtwSessions;
     bool hookScanExecuted = false;
     bool etwScanExecuted = false;

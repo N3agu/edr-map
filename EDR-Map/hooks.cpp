@@ -1,11 +1,18 @@
 #include "hooks.h"
 #include "types.h"
 #include "output.h"
+#include <algorithm>
 
-static const char* ntdllPath = "C:\\Windows\\System32\\ntdll.dll";
+static std::string GetSystemModulePath(const std::string& moduleName) {
+    char systemDir[MAX_PATH];
+    if (!GetSystemDirectoryA(systemDir, MAX_PATH)) {
+        return "C:\\Windows\\System32\\" + moduleName;
+    }
+    return std::string(systemDir) + "\\" + moduleName;
+}
 
-static PVOID ReadFileInMemory(const char* filePath) {
-    HANDLE fileHandle = CreateFileA(filePath, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+static PVOID ReadFileInMemory(const std::string& filePath) {
+    HANDLE fileHandle = CreateFileA(filePath.c_str(), GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (fileHandle == INVALID_HANDLE_VALUE) {
         if (!g_config.outputJson && !g_config.outputCsv) {
             GetOutStream() << "[-] Failed to open file (" << filePath << ")\n";
@@ -39,10 +46,6 @@ static PVOID ReadFileInMemory(const char* filePath) {
         return NULL;
     }
 
-    if (bytesRead != fileSize && !g_config.outputJson && !g_config.outputCsv) {
-        GetOutStream() << "[-] Failed to read file\n";
-    }
-
     CloseHandle(fileHandle);
 
     if (!g_config.runSilent && !g_config.outputJson && !g_config.outputCsv) {
@@ -64,104 +67,129 @@ static DWORD RvaToRawOffset(PIMAGE_NT_HEADERS ntHeaders, DWORD rva) {
     return 0;
 }
 
-void EnumerateHookedFunctions() {
-    g_results.hookScanExecuted = true;
+static bool ShouldScanFunction(const std::string& moduleName, const char* functionName) {
+    std::string lowerMod = moduleName;
+    std::transform(lowerMod.begin(), lowerMod.end(), lowerMod.begin(), ::tolower);
 
-    if (!g_config.outputJson && !g_config.outputCsv) {
-        if (!g_config.runSilent) GetOutStream() << "\n\n";
-        GetOutStream() << "----- Enumerating Hooked Userland Functions -----\n\n";
-        if (!g_config.runSilent) GetOutStream() << "[!] Loading the clean NTDLL from Disk...\n";
-    }
-
-    PVOID diskNtdllBuffer = ReadFileInMemory(ntdllPath);
-    if (!diskNtdllBuffer) {
-        if (!g_config.outputJson && !g_config.outputCsv) {
-            GetOutStream() << "[-] Failed to load " << ntdllPath << " from Disk\n";
-        }
-        return;
-    }
-
-    if (!g_config.runSilent && !g_config.outputJson && !g_config.outputCsv) {
-        GetOutStream() << "\n[!] Parsing PE Headers to find Exports...\n";
-    }
-
-    PIMAGE_DOS_HEADER dosHeader = (PIMAGE_DOS_HEADER)diskNtdllBuffer;
-    if (dosHeader->e_magic != IMAGE_DOS_SIGNATURE) {
-        if (!g_config.outputJson && !g_config.outputCsv) GetOutStream() << "[-] DOS Signature != 'MZ'\n";
-        VirtualFree(diskNtdllBuffer, 0, MEM_RELEASE);
-        return;
-    }
-
-    PIMAGE_NT_HEADERS ntHeaders = (PIMAGE_NT_HEADERS)((ULONG_PTR)diskNtdllBuffer + dosHeader->e_lfanew);
-    if (ntHeaders->Signature != IMAGE_NT_SIGNATURE) {
-        if (!g_config.outputJson && !g_config.outputCsv) GetOutStream() << "[-] NT Signature != 'PE\\0\\0'\n";
-        VirtualFree(diskNtdllBuffer, 0, MEM_RELEASE);
-        return;
-    }
-
-    DWORD exportDirectoryRva = ntHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress;
-    if (!exportDirectoryRva) {
-        if (!g_config.outputJson && !g_config.outputCsv) GetOutStream() << "[-] Can't find Export Directory\n";
-        VirtualFree(diskNtdllBuffer, 0, MEM_RELEASE);
-        return;
-    }
-
-    DWORD exportDirectoryOffset = RvaToRawOffset(ntHeaders, exportDirectoryRva);
-    PIMAGE_EXPORT_DIRECTORY exportDirectory = (PIMAGE_EXPORT_DIRECTORY)((ULONG_PTR)diskNtdllBuffer + exportDirectoryOffset);
-
-    if (!g_config.runSilent && !g_config.outputJson && !g_config.outputCsv) {
-        GetOutStream() << "[+] Export Directory found at RVA 0x" << std::hex << exportDirectoryRva << "\n";
-        GetOutStream() << "[+] Found " << std::dec << exportDirectory->NumberOfNames << " Exported Functions\n";
-        GetOutStream() << "\n[!] Getting handle to the NTDLL from Memory...\n";
-    }
-
-    HMODULE memoryNtdllBase = GetModuleHandleA("ntdll.dll");
-    if (!memoryNtdllBase) {
-        if (!g_config.outputJson && !g_config.outputCsv) GetOutStream() << "[-] Can't get handle to the NTDLL from Memory\n";
-        VirtualFree(diskNtdllBuffer, 0, MEM_RELEASE);
-        return;
-    }
-
-    if (!g_config.runSilent && !g_config.outputJson && !g_config.outputCsv) {
-        GetOutStream() << "[+] Found Memory NTDLL base address at 0x" << memoryNtdllBase << "\n";
-        GetOutStream() << "\n[!] Scanning for hooks in functions...\n";
-    }
-
-    PDWORD addressOfFunctions = (PDWORD)((ULONG_PTR)diskNtdllBuffer + RvaToRawOffset(ntHeaders, exportDirectory->AddressOfFunctions));
-    PDWORD addressOfNames = (PDWORD)((ULONG_PTR)diskNtdllBuffer + RvaToRawOffset(ntHeaders, exportDirectory->AddressOfNames));
-    PWORD addressOfNameOrdinals = (PWORD)((ULONG_PTR)diskNtdllBuffer + RvaToRawOffset(ntHeaders, exportDirectory->AddressOfNameOrdinals));
-
-    for (DWORD i = 0; i < exportDirectory->NumberOfNames; ++i) {
-        char* functionName = (char*)((ULONG_PTR)diskNtdllBuffer + RvaToRawOffset(ntHeaders, addressOfNames[i]));
-
-        if (!strncmp(functionName, "Nt", 2) ||
+    if (lowerMod == "ntdll.dll") {
+        return (!strncmp(functionName, "Nt", 2) ||
             !strncmp(functionName, "Zw", 2) ||
             !strncmp(functionName, "Etw", 3) ||
             !strncmp(functionName, "Ldr", 3) ||
             !strncmp(functionName, "Rtl", 3) ||
             !strncmp(functionName, "Ki", 2) ||
-            !strncmp(functionName, "RegNt", 5)) {
+            !strncmp(functionName, "RegNt", 5));
+    }
+
+    return true;
+}
+
+void ScanModule(const std::string& moduleName) {
+    std::string diskPath = GetSystemModulePath(moduleName);
+
+    if (!g_config.outputJson && !g_config.outputCsv && !g_config.runSilent) {
+        GetOutStream() << "\n[*] Processing module: " << moduleName << "\n";
+    }
+
+    PVOID diskBuffer = ReadFileInMemory(diskPath);
+    if (!diskBuffer) {
+        return;
+    }
+
+    PIMAGE_DOS_HEADER dosHeader = (PIMAGE_DOS_HEADER)diskBuffer;
+    if (dosHeader->e_magic != IMAGE_DOS_SIGNATURE) {
+        VirtualFree(diskBuffer, 0, MEM_RELEASE);
+        return;
+    }
+
+    PIMAGE_NT_HEADERS ntHeaders = (PIMAGE_NT_HEADERS)((ULONG_PTR)diskBuffer + dosHeader->e_lfanew);
+    if (ntHeaders->Signature != IMAGE_NT_SIGNATURE) {
+        VirtualFree(diskBuffer, 0, MEM_RELEASE);
+        return;
+    }
+
+    DWORD exportRva = ntHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress;
+    DWORD exportSize = ntHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].Size;
+    if (!exportRva) {
+        VirtualFree(diskBuffer, 0, MEM_RELEASE);
+        return;
+    }
+
+    PIMAGE_EXPORT_DIRECTORY exportDirectory = (PIMAGE_EXPORT_DIRECTORY)((ULONG_PTR)diskBuffer + RvaToRawOffset(ntHeaders, exportRva));
+
+    HMODULE memoryBase = GetModuleHandleA(moduleName.c_str());
+    bool loadedByUs = false;
+
+    if (!memoryBase) {
+        memoryBase = LoadLibraryA(moduleName.c_str());
+        if (!memoryBase) {
+            if (!g_config.outputJson && !g_config.outputCsv && !g_config.runSilent) {
+                GetOutStream() << "[-] Module not loaded in memory and could not be loaded: " << moduleName << "\n";
+            }
+            VirtualFree(diskBuffer, 0, MEM_RELEASE);
+            return;
+        }
+        loadedByUs = true;
+    }
+
+    PDWORD addressOfFunctions = (PDWORD)((ULONG_PTR)diskBuffer + RvaToRawOffset(ntHeaders, exportDirectory->AddressOfFunctions));
+    PDWORD addressOfNames = (PDWORD)((ULONG_PTR)diskBuffer + RvaToRawOffset(ntHeaders, exportDirectory->AddressOfNames));
+    PWORD addressOfNameOrdinals = (PWORD)((ULONG_PTR)diskBuffer + RvaToRawOffset(ntHeaders, exportDirectory->AddressOfNameOrdinals));
+
+    size_t initialHooks = g_results.hookedFunctions.size();
+
+    for (DWORD i = 0; i < exportDirectory->NumberOfNames; ++i) {
+        char* functionName = (char*)((ULONG_PTR)diskBuffer + RvaToRawOffset(ntHeaders, addressOfNames[i]));
+
+        if (ShouldScanFunction(moduleName, functionName)) {
             DWORD functionRva = addressOfFunctions[addressOfNameOrdinals[i]];
-            PVOID diskFunctionAddress = (PVOID)((ULONG_PTR)diskNtdllBuffer + RvaToRawOffset(ntHeaders, functionRva));
-            PVOID memoryFunctionAddress = (PVOID)((ULONG_PTR)memoryNtdllBase + functionRva);
+
+            if (functionRva >= exportRva && functionRva < exportRva + exportSize) {
+                continue;
+            }
+
+            PVOID diskFunctionAddress = (PVOID)((ULONG_PTR)diskBuffer + RvaToRawOffset(ntHeaders, functionRva));
+            PVOID memoryFunctionAddress = (PVOID)((ULONG_PTR)memoryBase + functionRva);
 
             if (memcmp(diskFunctionAddress, memoryFunctionAddress, 16) != 0) {
-                g_results.hookedFunctions.push_back(functionName);
+                g_results.hookedFunctions.push_back({ moduleName, functionName });
                 if (!g_config.outputJson && !g_config.outputCsv) {
-                    GetOutStream() << "[*] HOOKED: " << functionName << "\n";
+                    GetOutStream() << "[*] HOOKED [" << moduleName << "]: " << functionName << "\n";
                 }
             }
         }
     }
 
-    if (!g_config.outputJson && !g_config.outputCsv) {
-        if (g_results.hookedFunctions.empty()) {
-            GetOutStream() << "\n[-] No hooks detected in the functions";
-        }
-        else {
-            GetOutStream() << "\n[+] Found " << g_results.hookedFunctions.size() << " hooks";
-        }
+    if (loadedByUs) {
+        FreeLibrary(memoryBase);
     }
 
-    VirtualFree(diskNtdllBuffer, 0, MEM_RELEASE);
+    VirtualFree(diskBuffer, 0, MEM_RELEASE);
+
+    if (!g_config.outputJson && !g_config.outputCsv && !g_config.runSilent) {
+        size_t found = g_results.hookedFunctions.size() - initialHooks;
+        GetOutStream() << "[+] Completed " << moduleName << " (" << found << " hooks detected)\n";
+    }
+}
+
+void EnumerateHookedFunctions() {
+    g_results.hookScanExecuted = true;
+
+    if (!g_config.outputJson && !g_config.outputCsv) {
+        if (!g_config.runSilent) GetOutStream() << "\n\n";
+        GetOutStream() << "----- Enumerating Hooked Userland Functions -----\n";
+    }
+
+    for (const auto& moduleName : g_config.targetModules) {
+        ScanModule(moduleName);
+    }
+
+    if (!g_config.outputJson && !g_config.outputCsv) {
+        if (g_results.hookedFunctions.empty()) {
+            GetOutStream() << "\n[-] No hooks detected across scanned modules\n";
+        }
+        else {
+            GetOutStream() << "\n[+] Total hooks found: " << g_results.hookedFunctions.size() << "\n";
+        }
+    }
 }
