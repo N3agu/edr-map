@@ -5,6 +5,8 @@
 #include "minifilters.h"
 #include "amsi_audit.h"
 #include "hwbp.h"
+#include "memory_audit.h"
+#include "iat_audit.h"
 #include <iostream>
 #include <sstream>
 
@@ -29,6 +31,8 @@ static void DisableAllEngines() {
     g_config.runMinifilters = false;
     g_config.runAmsi = false;
     g_config.runHwbp = false;
+    g_config.runMemoryScan = false;
+    g_config.runIatScan = false;
 }
 
 int main(int argc, char* argv[]) {
@@ -60,6 +64,14 @@ int main(int argc, char* argv[]) {
         else if (strcmp(argv[i], "--hwbponly") == 0) {
             DisableAllEngines();
             g_config.runHwbp = true;
+        }
+        else if (strcmp(argv[i], "--memonly") == 0) {
+            DisableAllEngines();
+            g_config.runMemoryScan = true;
+        }
+        else if (strcmp(argv[i], "--iatonly") == 0) {
+            DisableAllEngines();
+            g_config.runIatScan = true;
         }
         else if (strcmp(argv[i], "--all-modules") == 0) {
             g_config.targetModules = {
@@ -104,7 +116,8 @@ int main(int argc, char* argv[]) {
 
     int activeEngines = (g_config.runHooks ? 1 : 0) + (g_config.runEtw ? 1 : 0) +
         (g_config.runMinifilters ? 1 : 0) + (g_config.runAmsi ? 1 : 0) +
-        (g_config.runHwbp ? 1 : 0);
+        (g_config.runHwbp ? 1 : 0) + (g_config.runMemoryScan ? 1 : 0) +
+        (g_config.runIatScan ? 1 : 0);
     if (activeEngines == 0) {
         PrintBanner();
         std::cout << "\n\n[-] Error: Invalid configuration (no scan engines active).\n";
@@ -127,6 +140,14 @@ int main(int argc, char* argv[]) {
 
     if (g_config.runHooks) {
         EnumerateHookedFunctions();
+    }
+
+    if (g_config.runIatScan) {
+        EnumerateIatHooks();
+    }
+
+    if (g_config.runMemoryScan) {
+        EnumerateExecutableMemory();
     }
 
     if (g_config.runEtw) {

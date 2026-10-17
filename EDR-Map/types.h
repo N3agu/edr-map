@@ -29,11 +29,27 @@ struct AmsiProviderFinding {
 };
 
 struct HwBreakpointFinding {
-    int registerIndex;          // 0, 1, 2, or 3
+    int registerIndex;
     ULONG_PTR address;
-    std::string condition;      // Execute, Write, Read/Write
-    std::string symbolInfo;     // Resolved DLL + offset
+    std::string condition;
+    std::string symbolInfo;
     bool active;
+};
+
+struct ExecMemoryFinding {
+    ULONG_PTR baseAddress;
+    SIZE_T regionSize;
+    std::string protection;
+    std::string stateType;
+    std::string mappedInfo;
+};
+
+struct IatHookFinding {
+    std::string sourceModule;
+    std::string importedDll;
+    std::string functionName;
+    ULONG_PTR currentAddress;
+    std::string destinationModule;
 };
 
 struct Config {
@@ -43,6 +59,8 @@ struct Config {
     bool runMinifilters = true;
     bool runAmsi = true;
     bool runHwbp = true;
+    bool runMemoryScan = true;
+    bool runIatScan = true;
     bool outputJson = false;
     bool outputCsv = false;
     std::string outputFile = "";
@@ -55,11 +73,15 @@ struct ScanResults {
     std::vector<MinifilterFinding> minifilters;
     std::vector<AmsiProviderFinding> amsiProviders;
     std::vector<HwBreakpointFinding> hwBreakpoints;
+    std::vector<ExecMemoryFinding> execMemoryRegions;
+    std::vector<IatHookFinding> iatHooks;
     bool hookScanExecuted = false;
     bool etwScanExecuted = false;
     bool minifilterScanExecuted = false;
     bool amsiScanExecuted = false;
     bool hwbpScanExecuted = false;
+    bool memoryScanExecuted = false;
+    bool iatScanExecuted = false;
 };
 
 extern Config g_config;

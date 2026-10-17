@@ -36,6 +36,12 @@
     <ClCompile Include="hwbp.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="memory_audit.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="iat_audit.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="types.h">
@@ -57,6 +63,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="hwbp.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="memory_audit.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="iat_audit.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

@@ -61,7 +61,7 @@ void PrintBanner() {
 }
 
 void PrintHelp() {
-    GetOutStream() << "\n\nA comprehensive auditing tool for AV/EDR hooks, ETW telemetry, minifilters, AMSI, and debug registers.\n\n"
+    GetOutStream() << "\n\nA comprehensive auditing tool for AV/EDR hooks, ETW, minifilters, AMSI, HWBP, IAT, and memory.\n\n"
         << "Usage: EDR_Map.exe [OPTIONS]\n\n"
         << "Options:\n"
         << "  -h, --help                 Show this help message and exit.\n"
@@ -71,6 +71,8 @@ void PrintHelp() {
         << "  --minifiltersonly          Run ONLY filesystem minifilter driver enumeration.\n"
         << "  --amsionly                 Run ONLY AMSI provider inspection.\n"
         << "  --hwbponly                 Run ONLY hardware breakpoint detection.\n"
+        << "  --memonly                  Run ONLY unbacked executable memory page scan.\n"
+        << "  --iatonly                  Run ONLY Import Address Table (IAT) integrity check.\n"
         << "  --modules <m1,m2,...>      Comma-separated list of DLLs to scan.\n"
         << "  --all-modules              Scan high-value targets (ntdll, kernel32, kernelbase, ws2_32, amsi).\n"
         << "  --json                     Output results in JSON format.\n"
@@ -173,6 +175,49 @@ void PrintJsonOutput() {
             out << "\n";
         }
         out << "  ]";
+        needsComma = true;
+    }
+
+    if (g_results.memoryScanExecuted) {
+        if (needsComma) out << ",\n";
+        out << "  \"executable_memory\": [\n";
+        for (size_t i = 0; i < g_results.execMemoryRegions.size(); ++i) {
+            const auto& m = g_results.execMemoryRegions[i];
+            std::ostringstream baseStr, sizeStr;
+            baseStr << "0x" << std::hex << m.baseAddress;
+            sizeStr << "0x" << std::hex << m.regionSize;
+            out << "    {\n"
+                << "      \"base_address\": \"" << baseStr.str() << "\",\n"
+                << "      \"size\": \"" << sizeStr.str() << "\",\n"
+                << "      \"type\": \"" << EscapeJsonString(m.stateType) << "\",\n"
+                << "      \"protection\": \"" << EscapeJsonString(m.protection) << "\",\n"
+                << "      \"backing\": \"" << EscapeJsonString(m.mappedInfo) << "\"\n"
+                << "    }";
+            if (i + 1 < g_results.execMemoryRegions.size()) out << ",";
+            out << "\n";
+        }
+        out << "  ]";
+        needsComma = true;
+    }
+
+    if (g_results.iatScanExecuted) {
+        if (needsComma) out << ",\n";
+        out << "  \"iat_hooks\": [\n";
+        for (size_t i = 0; i < g_results.iatHooks.size(); ++i) {
+            const auto& iat = g_results.iatHooks[i];
+            std::ostringstream addrStr;
+            addrStr << "0x" << std::hex << iat.currentAddress;
+            out << "    {\n"
+                << "      \"source_module\": \"" << EscapeJsonString(iat.sourceModule) << "\",\n"
+                << "      \"imported_dll\": \"" << EscapeJsonString(iat.importedDll) << "\",\n"
+                << "      \"function\": \"" << EscapeJsonString(iat.functionName) << "\",\n"
+                << "      \"address\": \"" << addrStr.str() << "\",\n"
+                << "      \"destination\": \"" << EscapeJsonString(iat.destinationModule) << "\"\n"
+                << "    }";
+            if (i + 1 < g_results.iatHooks.size()) out << ",";
+            out << "\n";
+        }
+        out << "  ]";
     }
 
     out << "\n}\n";
@@ -210,6 +255,20 @@ void PrintCsvOutput() {
             addrStr << "0x" << std::hex << bp.address;
             out << "hwbp,\"DR" << bp.registerIndex << "\",\""
                 << addrStr.str() << "\",\"" << bp.condition << "\",\"" << bp.symbolInfo << "\"\n";
+        }
+    }
+    if (g_results.memoryScanExecuted) {
+        for (const auto& m : g_results.execMemoryRegions) {
+            std::ostringstream baseStr;
+            baseStr << "0x" << std::hex << m.baseAddress;
+            out << "exec_mem,\"" << m.stateType << "\",\"" << baseStr.str() << "\",\""
+                << m.protection << "\",\"" << m.mappedInfo << "\"\n";
+        }
+    }
+    if (g_results.iatScanExecuted) {
+        for (const auto& iat : g_results.iatHooks) {
+            out << "iat_hook,\"" << iat.sourceModule << "\",\"" << iat.importedDll << "!" << iat.functionName
+                << "\",\"" << iat.destinationModule << "\",\"\"\n";
         }
     }
 }
