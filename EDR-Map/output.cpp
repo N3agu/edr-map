@@ -51,7 +51,7 @@ std::string EscapeJsonString(const std::string& input) {
 }
 
 void PrintBanner() {
-    GetOutStream() << R"""( _____ ____   ____    __  __              
+    GetOutStream() << R"""( _____ ____   ____   __  __              
 | ____|  _ \|  _ \  |  \/  | __ _ _ __  
 |  _| | | | | |_) | | |\/| |/ _` | '_ \ 
 | |___| |_| |  _ <  | |  | | (_| | |_) |
@@ -61,7 +61,7 @@ void PrintBanner() {
 }
 
 void PrintHelp() {
-    GetOutStream() << "\n\nA lightweight scanner that detects AV/EDR userland hooks, active ETW sessions, and minifilter drivers.\n\n"
+    GetOutStream() << "\n\nA comprehensive auditing tool for AV/EDR hooks, ETW telemetry, minifilters, AMSI, and debug registers.\n\n"
         << "Usage: EDR_Map.exe [OPTIONS]\n\n"
         << "Options:\n"
         << "  -h, --help                 Show this help message and exit.\n"
@@ -69,20 +69,20 @@ void PrintHelp() {
         << "  --etwonly                  Run ONLY ETW session enumeration.\n"
         << "  --hooksonly                Run ONLY userland API hook scanning.\n"
         << "  --minifiltersonly          Run ONLY filesystem minifilter driver enumeration.\n"
+        << "  --amsionly                 Run ONLY AMSI provider inspection.\n"
+        << "  --hwbponly                 Run ONLY hardware breakpoint detection.\n"
         << "  --modules <m1,m2,...>      Comma-separated list of DLLs to scan.\n"
         << "  --all-modules              Scan high-value targets (ntdll, kernel32, kernelbase, ws2_32, amsi).\n"
         << "  --json                     Output results in JSON format.\n"
         << "  --csv                      Output results in CSV format.\n"
-        << "  -o, --output <file>        Write output directly to specified file.\n\n"
-        << "Examples:\n"
-        << "  EDR_Map.exe                                      # Full audit with all modules\n"
-        << "  EDR_Map.exe --minifiltersonly                    # Only check filter drivers and altitudes\n"
-        << "  EDR_Map.exe --all-modules --json -o report.json  # Full scan exported to JSON\n";
+        << "  -o, --output <file>        Write output directly to specified file.\n\n";
 }
 
 void PrintJsonOutput() {
     std::ostream& out = GetOutStream();
     out << "{\n";
+
+    bool needsComma = false;
 
     if (g_results.hookScanExecuted) {
         out << "  \"hooks\": [\n";
@@ -103,11 +103,11 @@ void PrintJsonOutput() {
             out << "\n";
         }
         out << "  ]";
-        if (g_results.etwScanExecuted || g_results.minifilterScanExecuted) out << ",";
-        out << "\n";
+        needsComma = true;
     }
 
     if (g_results.etwScanExecuted) {
+        if (needsComma) out << ",\n";
         out << "  \"etw_sessions\": [\n";
         for (size_t i = 0; i < g_results.flaggedEtwSessions.size(); ++i) {
             std::string session = WStringToString(g_results.flaggedEtwSessions[i]);
@@ -116,11 +116,11 @@ void PrintJsonOutput() {
             out << "\n";
         }
         out << "  ]";
-        if (g_results.minifilterScanExecuted) out << ",";
-        out << "\n";
+        needsComma = true;
     }
 
     if (g_results.minifilterScanExecuted) {
+        if (needsComma) out << ",\n";
         out << "  \"minifilters\": [\n";
         for (size_t i = 0; i < g_results.minifilters.size(); ++i) {
             const auto& flt = g_results.minifilters[i];
@@ -134,31 +134,82 @@ void PrintJsonOutput() {
             if (i + 1 < g_results.minifilters.size()) out << ",";
             out << "\n";
         }
-        out << "  ]\n";
+        out << "  ]";
+        needsComma = true;
     }
 
-    out << "}\n";
+    if (g_results.amsiScanExecuted) {
+        if (needsComma) out << ",\n";
+        out << "  \"amsi_providers\": [\n";
+        for (size_t i = 0; i < g_results.amsiProviders.size(); ++i) {
+            const auto& p = g_results.amsiProviders[i];
+            out << "    {\n"
+                << "      \"guid\": \"" << EscapeJsonString(WStringToString(p.guid)) << "\",\n"
+                << "      \"name\": \"" << EscapeJsonString(WStringToString(p.friendlyName)) << "\",\n"
+                << "      \"dll_path\": \"" << EscapeJsonString(WStringToString(p.dllPath)) << "\",\n"
+                << "      \"security_vendor\": " << (p.isSecurityVendor ? "true" : "false") << "\n"
+                << "    }";
+            if (i + 1 < g_results.amsiProviders.size()) out << ",";
+            out << "\n";
+        }
+        out << "  ]";
+        needsComma = true;
+    }
+
+    if (g_results.hwbpScanExecuted) {
+        if (needsComma) out << ",\n";
+        out << "  \"hardware_breakpoints\": [\n";
+        for (size_t i = 0; i < g_results.hwBreakpoints.size(); ++i) {
+            const auto& bp = g_results.hwBreakpoints[i];
+            std::ostringstream addrStr;
+            addrStr << "0x" << std::hex << bp.address;
+            out << "    {\n"
+                << "      \"register\": \"DR" << bp.registerIndex << "\",\n"
+                << "      \"address\": \"" << addrStr.str() << "\",\n"
+                << "      \"condition\": \"" << EscapeJsonString(bp.condition) << "\",\n"
+                << "      \"symbol\": \"" << EscapeJsonString(bp.symbolInfo) << "\"\n"
+                << "    }";
+            if (i + 1 < g_results.hwBreakpoints.size()) out << ",";
+            out << "\n";
+        }
+        out << "  ]";
+    }
+
+    out << "\n}\n";
 }
 
 void PrintCsvOutput() {
     std::ostream& out = GetOutStream();
-    out << "type,module,name,disk_bytes,memory_bytes,target_module,altitude,category\n";
+    out << "type,module,name,extra1,extra2\n";
     if (g_results.hookScanExecuted) {
         for (const auto& item : g_results.hookedFunctions) {
             out << "hook,\"" << item.moduleName << "\",\"" << item.functionName << "\",\""
-                << item.diskBytesHex << "\",\"" << item.memoryBytesHex << "\",\""
-                << item.targetModule << "\",\"\",\"\"\n";
+                << item.targetModule << "\",\"" << item.diskBytesHex << "\"\n";
         }
     }
     if (g_results.etwScanExecuted) {
         for (const auto& session : g_results.flaggedEtwSessions) {
-            out << "etw,\"\",\"" << WStringToString(session) << "\",\"\",\"\",\"\",\"\",\"\"\n";
+            out << "etw,\"\",\"" << WStringToString(session) << "\",\"\",\n";
         }
     }
     if (g_results.minifilterScanExecuted) {
         for (const auto& flt : g_results.minifilters) {
-            out << "minifilter,\"\",\"" << WStringToString(flt.name) << "\",\"\",\"\",\"\",\""
+            out << "minifilter,\"\",\"" << WStringToString(flt.name) << "\",\""
                 << WStringToString(flt.altitude) << "\",\"" << flt.category << "\"\n";
+        }
+    }
+    if (g_results.amsiScanExecuted) {
+        for (const auto& p : g_results.amsiProviders) {
+            out << "amsi_provider,\"" << WStringToString(p.friendlyName) << "\",\""
+                << WStringToString(p.guid) << "\",\"" << WStringToString(p.dllPath) << "\",\n";
+        }
+    }
+    if (g_results.hwbpScanExecuted) {
+        for (const auto& bp : g_results.hwBreakpoints) {
+            std::ostringstream addrStr;
+            addrStr << "0x" << std::hex << bp.address;
+            out << "hwbp,\"DR" << bp.registerIndex << "\",\""
+                << addrStr.str() << "\",\"" << bp.condition << "\",\"" << bp.symbolInfo << "\"\n";
         }
     }
 }

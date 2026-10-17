@@ -3,6 +3,8 @@
 #include "hooks.h"
 #include "etw.h"
 #include "minifilters.h"
+#include "amsi_audit.h"
+#include "hwbp.h"
 #include <iostream>
 #include <sstream>
 
@@ -21,6 +23,14 @@ static std::vector<std::string> ParseModuleList(const std::string& input) {
     return modules;
 }
 
+static void DisableAllEngines() {
+    g_config.runHooks = false;
+    g_config.runEtw = false;
+    g_config.runMinifilters = false;
+    g_config.runAmsi = false;
+    g_config.runHwbp = false;
+}
+
 int main(int argc, char* argv[]) {
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
@@ -32,16 +42,24 @@ int main(int argc, char* argv[]) {
             g_config.runSilent = true;
         }
         else if (strcmp(argv[i], "--etwonly") == 0) {
-            g_config.runHooks = false;
-            g_config.runMinifilters = false;
+            DisableAllEngines();
+            g_config.runEtw = true;
         }
         else if (strcmp(argv[i], "--hooksonly") == 0) {
-            g_config.runEtw = false;
-            g_config.runMinifilters = false;
+            DisableAllEngines();
+            g_config.runHooks = true;
         }
         else if (strcmp(argv[i], "--minifiltersonly") == 0) {
-            g_config.runHooks = false;
-            g_config.runEtw = false;
+            DisableAllEngines();
+            g_config.runMinifilters = true;
+        }
+        else if (strcmp(argv[i], "--amsionly") == 0) {
+            DisableAllEngines();
+            g_config.runAmsi = true;
+        }
+        else if (strcmp(argv[i], "--hwbponly") == 0) {
+            DisableAllEngines();
+            g_config.runHwbp = true;
         }
         else if (strcmp(argv[i], "--all-modules") == 0) {
             g_config.targetModules = {
@@ -84,10 +102,12 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    int activeEngines = (g_config.runHooks ? 1 : 0) + (g_config.runEtw ? 1 : 0) + (g_config.runMinifilters ? 1 : 0);
+    int activeEngines = (g_config.runHooks ? 1 : 0) + (g_config.runEtw ? 1 : 0) +
+        (g_config.runMinifilters ? 1 : 0) + (g_config.runAmsi ? 1 : 0) +
+        (g_config.runHwbp ? 1 : 0);
     if (activeEngines == 0) {
         PrintBanner();
-        std::cout << "\n\n[-] Error: Invalid module flags selected.\n";
+        std::cout << "\n\n[-] Error: Invalid configuration (no scan engines active).\n";
         return -1;
     }
 
@@ -115,6 +135,14 @@ int main(int argc, char* argv[]) {
 
     if (g_config.runMinifilters) {
         EnumerateMinifilters();
+    }
+
+    if (g_config.runAmsi) {
+        EnumerateAmsiProviders();
+    }
+
+    if (g_config.runHwbp) {
+        EnumerateHardwareBreakpoints();
     }
 
     if (g_config.outputJson) {

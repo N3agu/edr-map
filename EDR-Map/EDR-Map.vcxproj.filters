@@ -30,6 +30,12 @@
     <ClCompile Include="minifilters.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="amsi_audit.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="hwbp.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="types.h">
@@ -45,6 +51,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="minifilters.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="amsi_audit.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="hwbp.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
