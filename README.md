@@ -53,25 +53,55 @@ Some modern EDRs avoid patching `ntdll.dll` inline and instead place hardware br
 ## Screenshots
 
 <details open>
-  <summary><strong>Screenshot of a Full Scan</strong></summary>
-  
-  ![](https://raw.githubusercontent.com/N3agu/EDR-Map/refs/heads/main/Images/full.png)
-</details>
-
-<details>
-  <summary><strong>Screenshot of EDR-Map with --etwonly</strong></summary>
-  
-  ![](https://raw.githubusercontent.com/N3agu/EDR-Map/refs/heads/main/Images/etw.png)
-</details>
-
-<details>
-  <summary><strong>Screenshot of EDR-Map with --hooksonly</strong></summary>
+  <summary><strong>Screenshot of a EDR Map with --hooks</strong></summary>
   
   ![](https://raw.githubusercontent.com/N3agu/EDR-Map/refs/heads/main/Images/hooks.png)
 </details>
 
 <details>
-  <summary><strong>Screenshot of Bitdefender Hooks</strong></summary>
+  <summary><strong>Screenshot of a EDR Map with --iat</strong></summary>
+  
+  ![](https://raw.githubusercontent.com/N3agu/EDR-Map/refs/heads/main/Images/iat.png)
+</details>
+
+<details>
+  <summary><strong>Screenshot of a EDR Map with --mem</strong></summary>
+  
+  ![](https://raw.githubusercontent.com/N3agu/EDR-Map/refs/heads/main/Images/mem.png)
+</details>
+
+<details>
+  <summary><strong>Screenshot of a EDR Map with --peb</strong></summary>
+  
+  ![](https://raw.githubusercontent.com/N3agu/EDR-Map/refs/heads/main/Images/peb.png)
+</details>
+
+<details>
+  <summary><strong>Screenshot of a EDR Map with --etw</strong></summary>
+  
+  ![](https://raw.githubusercontent.com/N3agu/EDR-Map/refs/heads/main/Images/etw.png)
+</details>
+
+<details>
+  <summary><strong>Screenshot of a EDR Map with --minifilters</strong></summary>
+  
+  ![](https://raw.githubusercontent.com/N3agu/EDR-Map/refs/heads/main/Images/minifilters.png)
+</details>
+
+<details>
+  <summary><strong>Screenshot of a EDR Map with --amsi</strong></summary>
+  
+  ![](https://raw.githubusercontent.com/N3agu/EDR-Map/refs/heads/main/Images/amsi.png)
+</details>
+
+<details>
+  <summary><strong>Screenshot of a EDR Map with --hwbp</strong></summary>
+  
+  ![](https://raw.githubusercontent.com/N3agu/EDR-Map/refs/heads/main/Images/hwbp.png)
+</details>
+
+<details>
+  <summary><strong>Screenshot of Bitdefender Hooks (v1)</strong></summary>
   
   ![](https://raw.githubusercontent.com/N3agu/EDR-Map/refs/heads/main/Images/bitdefender.png)
 </details>
