@@ -34,10 +34,20 @@ static void DisableAllEngines() {
     g_config.runHwbp = false;
     g_config.runMemoryScan = false;
     g_config.runIatScan = false;
-    g_config.runModuleScan = false;
+    g_config.runPebScan = false;
 }
 
 int main(int argc, char* argv[]) {
+    bool customEngineSelection = false;
+
+    auto EnableSpecificEngine = [&](bool& engineFlag) {
+        if (!customEngineSelection) {
+            DisableAllEngines();
+            customEngineSelection = true;
+        }
+        engineFlag = true;
+        };
+
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
             PrintBanner();
@@ -47,37 +57,29 @@ int main(int argc, char* argv[]) {
         else if (strcmp(argv[i], "-s") == 0 || strcmp(argv[i], "--silent") == 0) {
             g_config.runSilent = true;
         }
-        else if (strcmp(argv[i], "--etwonly") == 0) {
-            DisableAllEngines();
-            g_config.runEtw = true;
+        else if (strcmp(argv[i], "--hooks") == 0) {
+            EnableSpecificEngine(g_config.runHooks);
         }
-        else if (strcmp(argv[i], "--hooksonly") == 0) {
-            DisableAllEngines();
-            g_config.runHooks = true;
+        else if (strcmp(argv[i], "--iat") == 0) {
+            EnableSpecificEngine(g_config.runIatScan);
         }
-        else if (strcmp(argv[i], "--minifiltersonly") == 0) {
-            DisableAllEngines();
-            g_config.runMinifilters = true;
+        else if (strcmp(argv[i], "--mem") == 0) {
+            EnableSpecificEngine(g_config.runMemoryScan);
         }
-        else if (strcmp(argv[i], "--amsionly") == 0) {
-            DisableAllEngines();
-            g_config.runAmsi = true;
+        else if (strcmp(argv[i], "--peb") == 0) {
+            EnableSpecificEngine(g_config.runPebScan);
         }
-        else if (strcmp(argv[i], "--hwbponly") == 0) {
-            DisableAllEngines();
-            g_config.runHwbp = true;
+        else if (strcmp(argv[i], "--etw") == 0) {
+            EnableSpecificEngine(g_config.runEtw);
         }
-        else if (strcmp(argv[i], "--memonly") == 0) {
-            DisableAllEngines();
-            g_config.runMemoryScan = true;
+        else if (strcmp(argv[i], "--minifilters") == 0) {
+            EnableSpecificEngine(g_config.runMinifilters);
         }
-        else if (strcmp(argv[i], "--iatonly") == 0) {
-            DisableAllEngines();
-            g_config.runIatScan = true;
+        else if (strcmp(argv[i], "--amsi") == 0) {
+            EnableSpecificEngine(g_config.runAmsi);
         }
-        else if (strcmp(argv[i], "--modulesonly") == 0) {
-            DisableAllEngines();
-            g_config.runModuleScan = true;
+        else if (strcmp(argv[i], "--hwbp") == 0) {
+            EnableSpecificEngine(g_config.runHwbp);
         }
         else if (strcmp(argv[i], "--all-modules") == 0) {
             g_config.targetModules = {
@@ -120,17 +122,6 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    int activeEngines = (g_config.runHooks ? 1 : 0) + (g_config.runEtw ? 1 : 0) +
-        (g_config.runMinifilters ? 1 : 0) + (g_config.runAmsi ? 1 : 0) +
-        (g_config.runHwbp ? 1 : 0) + (g_config.runMemoryScan ? 1 : 0) +
-        (g_config.runIatScan ? 1 : 0) + (g_config.runModuleScan ? 1 : 0);
-
-    if (activeEngines == 0) {
-        PrintBanner();
-        std::cout << "\n\n[-] Error: Invalid configuration (no scan engines active).\n";
-        return -1;
-    }
-
     if (g_config.outputJson && g_config.outputCsv) {
         std::cout << "[-] Error: You cannot use --json and --csv at the same time.\n";
         return -1;
@@ -157,7 +148,7 @@ int main(int argc, char* argv[]) {
         EnumerateExecutableMemory();
     }
 
-    if (g_config.runModuleScan) {
+    if (g_config.runPebScan) {
         EnumeratePebModules();
     }
 

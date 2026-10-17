@@ -3,7 +3,6 @@
 #include "output.h"
 
 #include <windows.h>
-#include <winternl.h>
 #include <wintrust.h>
 #include <softpub.h>
 #include <wincrypt.h>
@@ -13,19 +12,46 @@
 #pragma comment(lib, "wintrust.lib")
 #pragma comment(lib, "crypt32.lib")
 
-typedef struct _LDR_DATA_TABLE_ENTRY_EXT {
-    LIST_ENTRY InLoadOrderLinks;
-    LIST_ENTRY InMemoryOrderLinks;
-    LIST_ENTRY InInitializationOrderLinks;
-    PVOID DllBase;
-    PVOID EntryPoint;
-    ULONG SizeOfImage;
-    UNICODE_STRING FullDllName;
-    UNICODE_STRING BaseDllName;
-} LDR_DATA_TABLE_ENTRY_EXT, * PLDR_DATA_TABLE_ENTRY_EXT;
+namespace NativeLdr {
+    struct UNICODE_STRING_T {
+        USHORT Length;
+        USHORT MaximumLength;
+        PWSTR  Buffer;
+    };
+
+    struct PEB_LDR_DATA_FULL {
+        ULONG Length;
+        BOOLEAN Initialized;
+        HANDLE SsHandle;
+        LIST_ENTRY InLoadOrderModuleList;
+        LIST_ENTRY InMemoryOrderModuleList;
+        LIST_ENTRY InInitializationOrderModuleList;
+    };
+
+    struct PEB_FULL {
+        BOOLEAN InheritedAddressSpace;
+        BOOLEAN ReadImageFileExecOptions;
+        BOOLEAN BeingDebugged;
+        BOOLEAN BitField;
+        HANDLE Mutant;
+        PVOID ImageBaseAddress;
+        PEB_LDR_DATA_FULL* Ldr;
+    };
+
+    struct LDR_DATA_TABLE_ENTRY_FULL {
+        LIST_ENTRY InLoadOrderLinks;
+        LIST_ENTRY InMemoryOrderLinks;
+        LIST_ENTRY InInitializationOrderLinks;
+        PVOID DllBase;
+        PVOID EntryPoint;
+        ULONG SizeOfImage;
+        UNICODE_STRING_T FullDllName;
+        UNICODE_STRING_T BaseDllName;
+    };
+}
 
 static bool VerifyEmbeddedSignature(const std::wstring& filePath, std::wstring& signerOut) {
-    signerOut = L"Unsigned / Invalid";
+    signerOut = L"Unsigned / Catalog-Signed";
 
     WINTRUST_FILE_INFO fileData = { 0 };
     fileData.cbStruct = sizeof(WINTRUST_FILE_INFO);
@@ -45,7 +71,7 @@ static bool VerifyEmbeddedSignature(const std::wstring& filePath, std::wstring& 
     bool isValid = (status == ERROR_SUCCESS);
 
     if (isValid) {
-        signerOut = L"Valid Signature";
+        signerOut = L"Valid Embedded Signature";
 
         CRYPT_PROVIDER_DATA const* provData = WTHelperProvDataFromStateData(trustData.hWVTStateData);
         if (provData) {
@@ -68,7 +94,7 @@ static bool VerifyEmbeddedSignature(const std::wstring& filePath, std::wstring& 
 
 static bool CheckIfSecurityVendorModule(const std::wstring& name, const std::wstring& path) {
     std::wstring lower = name + L" " + path;
-    std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+    std::transform(lower.begin(), lower.end(), lower.begin(), ::towlower);
 
     static const std::vector<std::wstring> vendorKeywords = {
         L"csagent", L"crowdstrike", L"umppc", L"sentinel", L"inprocessclient",
@@ -86,18 +112,18 @@ static bool CheckIfSecurityVendorModule(const std::wstring& name, const std::wst
 }
 
 void EnumeratePebModules() {
-    g_results.moduleScanExecuted = true;
+    g_results.pebScanExecuted = true;
 
     if (!g_config.outputJson && !g_config.outputCsv) {
         if (!g_config.runSilent) GetOutStream() << "\n\n";
         GetOutStream() << "----- Scanning In-Memory Modules (PEB Loader Walking) -----\n\n";
     }
 
-    PPEB peb = NULL;
+    NativeLdr::PEB_FULL* peb = NULL;
 #if defined(_WIN64)
-    peb = (PPEB)__readgsqword(0x60);
+    peb = reinterpret_cast<NativeLdr::PEB_FULL*>(__readgsqword(0x60));
 #else
-    peb = (PPEB)__readfsdword(0x30);
+    peb = reinterpret_cast<NativeLdr::PEB_FULL*>(__readfsdword(0x30));
 #endif
 
     if (!peb || !peb->Ldr) {
@@ -107,12 +133,11 @@ void EnumeratePebModules() {
         return;
     }
 
-    char sysDirA[MAX_PATH] = { 0 };
-    GetSystemDirectoryA(sysDirA, MAX_PATH);
-    std::string sysDirStr = sysDirA;
-    std::wstring sysDir(sysDirStr.begin(), sysDirStr.end());
+    WCHAR winDirBuf[MAX_PATH] = { 0 };
+    GetWindowsDirectoryW(winDirBuf, MAX_PATH);
+    std::wstring winDir = winDirBuf;
 
-    PLIST_ENTRY head = &peb->Ldr->InMemoryOrderModuleList;
+    PLIST_ENTRY head = &peb->Ldr->InLoadOrderModuleList;
     PLIST_ENTRY current = head->Flink;
 
     if (current != head) {
@@ -122,13 +147,13 @@ void EnumeratePebModules() {
     int flaggedModules = 0;
 
     while (current != head && current != NULL) {
-        PLDR_DATA_TABLE_ENTRY_EXT entry = CONTAINING_RECORD(current, LDR_DATA_TABLE_ENTRY_EXT, InMemoryOrderLinks);
+        auto entry = CONTAINING_RECORD(current, NativeLdr::LDR_DATA_TABLE_ENTRY_FULL, InLoadOrderLinks);
 
         if (entry->DllBase != NULL && entry->FullDllName.Buffer != NULL && entry->BaseDllName.Buffer != NULL) {
             std::wstring fullPath(entry->FullDllName.Buffer, entry->FullDllName.Length / sizeof(WCHAR));
             std::wstring baseName(entry->BaseDllName.Buffer, entry->BaseDllName.Length / sizeof(WCHAR));
 
-            bool isNonSystem = (_wcsnicmp(fullPath.c_str(), sysDir.c_str(), sysDir.length()) != 0);
+            bool isNonSystem = (_wcsnicmp(fullPath.c_str(), winDir.c_str(), winDir.length()) != 0);
             bool isSecurity = CheckIfSecurityVendorModule(baseName, fullPath);
 
             std::wstring signer;
@@ -147,7 +172,7 @@ void EnumeratePebModules() {
 
             g_results.loadedModules.push_back(finding);
 
-            bool shouldAlert = isSecurity || isNonSystem || !isSigned;
+            bool shouldAlert = isSecurity || isNonSystem;
             if (shouldAlert) {
                 flaggedModules++;
             }
@@ -158,7 +183,7 @@ void EnumeratePebModules() {
                         << WStringToString(baseName) << " (0x" << std::hex << finding.baseAddress << std::dec << ")\n"
                         << "    Path     : " << WStringToString(fullPath) << "\n"
                         << "    Signer   : " << WStringToString(signer) << "\n"
-                        << "    Category : " << (isSecurity ? "Known Security Vendor / EDR" : (isNonSystem ? "Non-System Directory" : "Standard System Binary")) << "\n";
+                        << "    Category : " << (isSecurity ? "Known Security Vendor / EDR" : (isNonSystem ? "Non-Windows Directory" : "Standard Windows Binary")) << "\n";
                 }
             }
         }
@@ -167,7 +192,7 @@ void EnumeratePebModules() {
     }
 
     if (!g_config.outputJson && !g_config.outputCsv) {
-        GetOutStream() << "\n[!] Completed module audit: " << g_results.loadedModules.size()
-            << " loaded DLLs scanned (" << flaggedModules << " flagged as security/external/unsigned).\n";
+        GetOutStream() << "\n[!] Completed PEB module audit: " << g_results.loadedModules.size()
+            << " loaded DLLs scanned (" << flaggedModules << " non-Windows or security vendor modules).\n";
     }
 }

@@ -72,7 +72,7 @@ struct Config {
     bool runHwbp = true;
     bool runMemoryScan = true;
     bool runIatScan = true;
-    bool runModuleScan = true;
+    bool runPebScan = true;
     bool outputJson = false;
     bool outputCsv = false;
     std::string outputFile = "";
@@ -95,7 +95,7 @@ struct ScanResults {
     bool hwbpScanExecuted = false;
     bool memoryScanExecuted = false;
     bool iatScanExecuted = false;
-    bool moduleScanExecuted = false;
+    bool pebScanExecuted = false;
 };
 
 extern Config g_config;
