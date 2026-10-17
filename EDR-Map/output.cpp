@@ -73,6 +73,7 @@ void PrintHelp() {
         << "  --hwbponly                 Run ONLY hardware breakpoint detection.\n"
         << "  --memonly                  Run ONLY unbacked executable memory page scan.\n"
         << "  --iatonly                  Run ONLY Import Address Table (IAT) integrity check.\n"
+        << "  --modulesonly              Run ONLY in-memory loaded module (PEB) audit.\n"
         << "  --modules <m1,m2,...>      Comma-separated list of DLLs to scan.\n"
         << "  --all-modules              Scan high-value targets (ntdll, kernel32, kernelbase, ws2_32, amsi).\n"
         << "  --json                     Output results in JSON format.\n"
@@ -220,6 +221,31 @@ void PrintJsonOutput() {
         out << "  ]";
     }
 
+    if (g_results.moduleScanExecuted) {
+        if (needsComma) out << ",\n";
+        out << "  \"loaded_modules\": [\n";
+        for (size_t i = 0; i < g_results.loadedModules.size(); ++i) {
+            const auto& m = g_results.loadedModules[i];
+            std::ostringstream baseStr, sizeStr;
+            baseStr << "0x" << std::hex << m.baseAddress;
+            sizeStr << "0x" << std::hex << m.sizeOfImage;
+            out << "    {\n"
+                << "      \"name\": \"" << EscapeJsonString(WStringToString(m.moduleName)) << "\",\n"
+                << "      \"path\": \"" << EscapeJsonString(WStringToString(m.fullPath)) << "\",\n"
+                << "      \"base_address\": \"" << baseStr.str() << "\",\n"
+                << "      \"size\": \"" << sizeStr.str() << "\",\n"
+                << "      \"signed\": " << (m.isSigned ? "true" : "false") << ",\n"
+                << "      \"signer\": \"" << EscapeJsonString(WStringToString(m.signatureSigner)) << "\",\n"
+                << "      \"non_system\": " << (m.isNonSystemPath ? "true" : "false") << ",\n"
+                << "      \"security_vendor\": " << (m.isKnownSecurityVendor ? "true" : "false") << "\n"
+                << "    }";
+            if (i + 1 < g_results.loadedModules.size()) out << ",";
+            out << "\n";
+        }
+        out << "  ]";
+        needsComma = true;
+    }
+
     out << "\n}\n";
 }
 
@@ -269,6 +295,15 @@ void PrintCsvOutput() {
         for (const auto& iat : g_results.iatHooks) {
             out << "iat_hook,\"" << iat.sourceModule << "\",\"" << iat.importedDll << "!" << iat.functionName
                 << "\",\"" << iat.destinationModule << "\",\"\"\n";
+        }
+    }
+    if (g_results.moduleScanExecuted) {
+        for (const auto& m : g_results.loadedModules) {
+            std::ostringstream baseStr;
+            baseStr << "0x" << std::hex << m.baseAddress;
+            out << "loaded_module,\"" << WStringToString(m.moduleName) << "\",\""
+                << WStringToString(m.fullPath) << "\",\"" << baseStr.str() << "\",\""
+                << WStringToString(m.signatureSigner) << "\"\n";
         }
     }
 }

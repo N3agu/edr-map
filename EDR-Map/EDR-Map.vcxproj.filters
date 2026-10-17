@@ -42,6 +42,9 @@
     <ClCompile Include="iat_audit.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="peb_audit.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="types.h">
@@ -69,6 +72,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="iat_audit.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="peb_audit.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

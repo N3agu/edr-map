@@ -133,6 +133,7 @@
     <ClCompile Include="memory_audit.cpp" />
     <ClCompile Include="minifilters.cpp" />
     <ClCompile Include="output.cpp" />
+    <ClCompile Include="peb_audit.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="amsi_audit.h" />
@@ -143,6 +144,7 @@
     <ClInclude Include="memory_audit.h" />
     <ClInclude Include="minifilters.h" />
     <ClInclude Include="output.h" />
+    <ClInclude Include="peb_audit.h" />
     <ClInclude Include="types.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

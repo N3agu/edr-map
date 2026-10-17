@@ -52,6 +52,17 @@ struct IatHookFinding {
     std::string destinationModule;
 };
 
+struct LoadedModuleFinding {
+    std::wstring moduleName;
+    std::wstring fullPath;
+    ULONG_PTR baseAddress;
+    ULONG sizeOfImage;
+    bool isNonSystemPath;
+    bool isKnownSecurityVendor;
+    bool isSigned;
+    std::wstring signatureSigner;
+};
+
 struct Config {
     bool runSilent = false;
     bool runHooks = true;
@@ -61,6 +72,7 @@ struct Config {
     bool runHwbp = true;
     bool runMemoryScan = true;
     bool runIatScan = true;
+    bool runModuleScan = true;
     bool outputJson = false;
     bool outputCsv = false;
     std::string outputFile = "";
@@ -75,6 +87,7 @@ struct ScanResults {
     std::vector<HwBreakpointFinding> hwBreakpoints;
     std::vector<ExecMemoryFinding> execMemoryRegions;
     std::vector<IatHookFinding> iatHooks;
+    std::vector<LoadedModuleFinding> loadedModules;
     bool hookScanExecuted = false;
     bool etwScanExecuted = false;
     bool minifilterScanExecuted = false;
@@ -82,6 +95,7 @@ struct ScanResults {
     bool hwbpScanExecuted = false;
     bool memoryScanExecuted = false;
     bool iatScanExecuted = false;
+    bool moduleScanExecuted = false;
 };
 
 extern Config g_config;
